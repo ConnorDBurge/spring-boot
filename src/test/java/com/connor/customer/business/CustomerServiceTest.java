@@ -3,7 +3,9 @@ package com.connor.customer.business;
 import com.connor.customer.dao.CustomerDao;
 import com.connor.customer.model.Customer;
 import com.connor.customer.payload.CustomerRegistrationRequest;
+import com.connor.customer.payload.CustomerUpdateRequest;
 import com.connor.exception.DuplicateResourceException;
+import com.connor.exception.RequestValidationException;
 import com.connor.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,10 +61,8 @@ class CustomerServiceTest {
 
     @Test
     void addCustomer() {
-        String email = "alex@gmail.com";
-        when(customerDao.existCustomerWithEmail(email)).thenReturn(false);
-
-        CustomerRegistrationRequest request = new CustomerRegistrationRequest("Alex", email, 27);
+        CustomerRegistrationRequest request = new CustomerRegistrationRequest("Alex", "alex@gmail.com", 27);
+        when(customerDao.existCustomerWithEmail(request.email())).thenReturn(false);
         underTest.addCustomer(request);
 
         ArgumentCaptor<Customer> customerArgumentCaptor = ArgumentCaptor.forClass(Customer.class);
@@ -77,10 +77,9 @@ class CustomerServiceTest {
 
     @Test
     void willThrowWhenEmailExistAddCustomer() {
-        String email = "alex@gmail.com";
-        when(customerDao.existCustomerWithEmail(email)).thenReturn(true);
+        CustomerRegistrationRequest request = new CustomerRegistrationRequest("Alex", "alex@gmail.com", 27);
+        when(customerDao.existCustomerWithEmail(request.email())).thenReturn(true);
 
-        CustomerRegistrationRequest request = new CustomerRegistrationRequest("Alex", email, 27);
         assertThatThrownBy(() -> underTest.addCustomer(request))
                 .isInstanceOf(DuplicateResourceException.class)
                 .hasMessage("Customer with email already exist");
@@ -92,6 +91,7 @@ class CustomerServiceTest {
         Long id = 1L;
         when(customerDao.existCustomerWithId(id)).thenReturn(true);
         underTest.deleteCustomerById(id);
+
         verify(customerDao).deleteCustomer(id);
     }
 
@@ -99,6 +99,7 @@ class CustomerServiceTest {
     void willThrowWhenNoDeleteCustomerById() {
         Long id = 1L;
         when(customerDao.existCustomerWithId(id)).thenReturn(false);
+
         assertThatThrownBy(() -> underTest.deleteCustomerById(id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Customer could not be found");
@@ -106,5 +107,55 @@ class CustomerServiceTest {
 
     @Test
     void updateCustomer() {
+        Long id = 1L;
+        Customer customer = new Customer(id, "Alex", "alex@gmail.com", 27);
+        CustomerUpdateRequest request = new CustomerUpdateRequest("Connor", "connor@gmail.com", 28);
+        when(customerDao.selectCustomerById(id)).thenReturn(Optional.of(customer));
+        when(customerDao.existCustomerWithEmail(request.email())).thenReturn(false);
+        underTest.updateCustomer(id, request);
+
+        assertThat(customer.getName()).isEqualTo(request.name());
+        assertThat(customer.getEmail()).isEqualTo(request.email());
+        assertThat(customer.getAge()).isEqualTo(request.age());
+        verify(customerDao).updateCustomer(customer);
+    }
+
+    @Test
+    void onlyUpdateCustomerName() {
+        Long id = 1L;
+        Customer customer = new Customer(id, "Alex", "alex@gmail.com", 27);
+        CustomerUpdateRequest request = new CustomerUpdateRequest("Connor", null, null);
+        when(customerDao.selectCustomerById(id)).thenReturn(Optional.of(customer));
+        underTest.updateCustomer(id, request);
+
+        assertThat(customer.getName()).isEqualTo(request.name());
+        verify(customerDao).updateCustomer(customer);
+    }
+
+    @Test
+    void willThrowNoChangesUpdateCustomer() {
+        Long id = 1L;
+        Customer customer = new Customer(id, "Alex", "alex@gmail.com", 27);
+        CustomerUpdateRequest request = new CustomerUpdateRequest("Alex", "alex@gmail.com", 27);
+        when(customerDao.selectCustomerById(id)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> underTest.updateCustomer(id, request))
+                .isInstanceOf(RequestValidationException.class)
+                .hasMessage("no changes found");
+        verify(customerDao, never()).updateCustomer(any());
+    }
+
+    @Test
+    void willThrowDuplicateEmailUpdateCustomer() {
+        Long id = 1L;
+        Customer customer = new Customer(id, "Alex", "alex@gmail.com", 27);
+        CustomerUpdateRequest request = new CustomerUpdateRequest("Connor", "connor@gmail.com", 28);
+        when(customerDao.selectCustomerById(id)).thenReturn(Optional.of(customer));
+        when(customerDao.existCustomerWithEmail(request.email())).thenReturn(true);
+
+        assertThatThrownBy(() -> underTest.updateCustomer(id, request))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessage("Email is already taken");
+        verify(customerDao, never()).updateCustomer(any());
     }
 }
